@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Report a Defect</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    :root {
+      --app-bg: var(--tg-theme-secondary-bg-color, #f0f2f5);
+      --card-bg: var(--tg-theme-bg-color, #ffffff);
+      --text-main: var(--tg-theme-text-color, #1c1c1e);
+      --text-muted: var(--tg-theme-hint-color, #8e8e93);
+      --input-bg: var(--tg-theme-secondary-bg-color, #f2f2f7);
+      --border-color: var(--tg-theme-hint-color, #e5e5ea);
+      --primary-accent: var(--tg-theme-button-color, #007aff);
+    }
+    
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: var(--app-bg); color: var(--text-main); padding: 20px; margin: 0; transition: background-color 0.3s; }
+    h2 { margin-top: 0; font-weight: 700; letter-spacing: -0.5px; text-align: center; color: #d35400;}
+    
+    .card { background: var(--card-bg); border-radius: 16px; padding: 24px 20px; box-shadow: 0 8px 24px rgba(0,0,0,0.06); margin-bottom: 15px; }
+    
+    label { display: block; text-align: left; margin-bottom: 8px; font-weight: 600; font-size: 13px; color: var(--text-muted); margin-top: 20px; text-transform: uppercase;}
+    
+    select, textarea { width: 100%; padding: 14px; border-radius: 12px; border: 1px solid var(--border-color); background-color: var(--input-bg); color: var(--text-main); box-sizing: border-box; font-family: inherit; font-size: 15px; outline: none; }
+    textarea { height: 100px; resize: none; }
+    
+    .file-drop { border: 2px dashed var(--border-color); background: var(--input-bg); padding: 20px; text-align: center; border-radius: 12px; color: var(--text-muted); font-size: 14px; cursor: pointer; margin-top: 5px;}
+    .file-drop strong { color: var(--primary-accent); }
+    
+    .btn { background: var(--primary-accent); color: #fff; border: none; padding: 16px 20px; font-size: 16px; border-radius: 12px; width: 100%; margin-top: 25px; cursor: pointer; font-weight: bold; }
+    .btn:active { transform: scale(0.96); }
+    .btn:disabled { opacity: 0.7; cursor: not-allowed; }
+    
+    #photoList { display: flex; flex-direction: column; gap: 5px; margin-top: 10px; font-size: 13px; color: var(--text-muted); }
+    
+    .spinner { display: inline-block; width: 18px; height: 18px; border: 2.5px solid rgba(255,255,255,0.3); border-top-color: #fff; border-radius: 50%; animation: spin 0.8s linear infinite; margin-right: 8px; vertical-align: middle;}
+    @keyframes spin { 100% { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+  <div class="card" id="mainForm">
+      <h2>⚠️ Report a Defect</h2>
+      <p id="userInfo" style="font-size: 14px; color: var(--text-muted); text-align: center;">Connecting...</p>
+      
+      <label>Select Unit #</label>
+      <select id="unitNum">
+          <option value="">Loading Fleet Data...</option>
+      </select>
+      
+      <label>Severity Level</label>
+      <select id="severity">
+          <option value="">Loading...</option>
+      </select>
+      
+      <label>Issue Description</label>
+      <textarea id="notes" placeholder="Be as specific as possible..."></textarea>
+      
+      <label>Attach Photos</label>
+      <div class="file-drop" onclick="document.getElementById('photos').click()">
+          📷 Click to upload photos of the damage.
+      </div>
+      <input type="file" id="photos" multiple accept="image/*" style="display:none;" onchange="handleFiles(this)">
+      <div id="photoList"></div>
+      
+      <button class="btn" id="submitBtn" onclick="submitDefect()">Submit Report</button>
+  </div>
+
+  <script>
+    // ** IMPORTANT: REPLACE WITH YOUR GOOGLE WEB APP URL **
+    const GAS_URL = "https://script.google.com/macros/s/AKfycbwgjtKbemo-ssX23F3aJ_O8I-sEDZb4AfKgapbIATcW4NrSVrPdpUa5DAnAapNZCB-p/exec"; 
+    
+    let tg = window.Telegram.WebApp;
+    tg.expand(); 
+    
+    let driverName = tg.initDataUnsafe?.user?.first_name || "Unknown Driver";
+    document.getElementById('userInfo').innerText = `Reporting as: ${driverName}`;
+    
+    let base64Files = [];
+
+    window.onload = () => {
+        fetch(GAS_URL + "?action=getDefectData")
+        .then(res => res.json())
+        .then(data => {
+            let uSelect = document.getElementById('unitNum');
+            uSelect.innerHTML = '<option value="">Select Unit...</option>';
+            data.units.forEach(u => {
+                uSelect.innerHTML += `<option value="${u}">${u}</option>`;
+            });
+            
+            let sSelect = document.getElementById('severity');
+            sSelect.innerHTML = '';
+            data.severities.forEach(s => {
+                sSelect.innerHTML += `<option value="${s}">${s}</option>`;
+            });
+        })
+        .catch(err => {
+            tg.showAlert("Failed to load fleet data. Check your internet connection.");
+        });
+    };
+
+    function handleFiles(input) {
+        let list = document.getElementById('photoList');
+        if (input.files && input.files.length > 0) {
+            Array.from(input.files).forEach(file => {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = () => {
+                    base64Files.push(reader.result.split(',')[1]);
+                    list.innerHTML += `<div>✅ ${file.name} attached.</div>`;
+                };
+            });
+        }
+    }
+
+    function submitDefect() {
+        const unitNum = document.getElementById('unitNum').value;
+        const severity = document.getElementById('severity').value;
+        const notes = document.getElementById('notes').value;
+        
+        if (!unitNum) return tg.showAlert("Please select a Unit Number.");
+        if (!notes) return tg.showAlert("Please describe the issue.");
+        
+        let btn = document.getElementById('submitBtn');
+        btn.innerHTML = `<div class="spinner"></div> Sending Report...`;
+        btn.disabled = true;
+        
+        let payload = {
+            action: "submitDefect",
+            driverName: driverName,
+            unitNumber: unitNum,
+            severity: severity,
+            notes: notes,
+            photos: base64Files
+        };
+
+        fetch(GAS_URL, {
+            method: 'POST',
+            body: JSON.stringify(payload)
+        })
+        .then(res => res.json())
+        .then(data => {
+            if(data.status === "success") {
+                tg.showAlert(data.msg);
+                tg.close();
+            } else {
+                tg.showAlert("Error: " + data.msg);
+                btn.innerHTML = "Submit Report";
+                btn.disabled = false;
+            }
+        })
+        .catch(err => {
+            tg.showAlert("Network error. Please try again.");
+            btn.innerHTML = "Submit Report";
+            btn.disabled = false;
+        });
+    }
+  </script>
+</body>
+</html>
